@@ -105,6 +105,8 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
     private String sppUuid;
     /** True from the moment we open the relay socket until its session is ready. */
     private boolean relayEstablishing;
+    /** True only after the relay's independent handshake and init burst complete. */
+    private volatile boolean appRelayReady;
     private static final long RELAY_ESTABLISH_TIMEOUT_MS = 15000;
 
     private RelaySupervisor supervisor;
@@ -137,6 +139,9 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
 
     public interface Listener {
         void onStateChanged(ConnectionState state);
+
+        /** The RFCOMM app relay is independently usable/lost while BLE stays up. */
+        default void onRelayStateChanged(boolean ready) {}
     }
 
     public InboundRouter inboundRouter() {
@@ -173,6 +178,9 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
     public ConnectionState state() { return state; }
     public DeviceInfo glassesInfo() { return glassesInfo; }
     public String sppUuid() { return sppUuid; }
+    public boolean isAppRelayReady() {
+        return appRelayReady;
+    }
 
     public void start(final String mac) {
         conn.post(new Runnable() {
@@ -343,6 +351,8 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
     }
 
     private void closeRelay() {
+        boolean wasReady = appRelayReady;
+        appRelayReady = false;
         if (rfcomm != null) {
             rfcomm.close();
             rfcomm = null;
@@ -350,6 +360,7 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
         rfSession = null;
         relayEstablishing = false;
         conn.removeCallbacks(relayEstablishTimeout);
+        if (wasReady && listener != null) listener.onRelayStateChanged(false);
     }
 
     // ------------------------------------------------------------ connect
@@ -591,7 +602,7 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
     @Override
     public boolean isRelayConnected() {
         if (relayEstablishing) return true; // handshake in flight; give it time
-        return rfcomm != null && rfcomm.isConnected() && rfSession != null && rfSession.ready;
+        return isAppRelayReady();
     }
 
     @Override
@@ -631,7 +642,9 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
 
     private void relayEstablished() {
         relayEstablishing = false;
+        appRelayReady = true;
         conn.removeCallbacks(relayEstablishTimeout);
+        if (listener != null) listener.onRelayStateChanged(true);
     }
 
     private final TransportListener relayListener = new TransportListener() {
@@ -648,7 +661,10 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
 
         @Override
         public void onDisconnected(Transport transport, Throwable cause) {
-            relayEstablished();
+            boolean wasReady = appRelayReady;
+            appRelayReady = false;
+            relayEstablishing = false;
+            conn.removeCallbacks(relayEstablishTimeout);
             if (cause != null) {
                 LogBus.warn("app relay lost: " + cause.getClass().getSimpleName()
                         + ": " + cause.getMessage());
@@ -659,6 +675,7 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
                 rfcomm = null;
                 rfSession = null;
             }
+            if (wasReady && listener != null) listener.onRelayStateChanged(false);
             if (supervisor != null) supervisor.onRelayLost();
         }
     };
