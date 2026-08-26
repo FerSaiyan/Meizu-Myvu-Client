@@ -1,5 +1,6 @@
 package com.myvu.client.transport.ble;
 
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
@@ -30,6 +31,7 @@ import java.util.UUID;
  * body does nothing but hand off -- GATT bookkeeping to the myvu-gatt thread
  * (via GattQueue), protocol payloads to the connection thread.
  */
+@SuppressLint("MissingPermission")
 public class BleTransport {
 
     /** ATT default; anything smaller than this is not usable. */

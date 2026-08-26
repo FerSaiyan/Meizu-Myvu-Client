@@ -1,5 +1,6 @@
 package com.myvu.client.service;
 
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -28,6 +29,7 @@ import java.util.concurrent.TimeUnit;
  * Kept because it encodes the exact hidden-API call the official app uses, in
  * case a device or firmware turns up that does require an explicit bond.
  */
+@SuppressLint("MissingPermission")
 public class Bonding {
 
     private static final long BOND_TIMEOUT_SECONDS = 30;
@@ -43,14 +45,8 @@ public class Bonding {
             if (BluetoothDevice.ACTION_PAIRING_REQUEST.equals(action)) {
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 int variant = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, -1);
-                LogBus.log("pairing request (variant=" + variant + ") -- auto-confirming, "
-                        + "matching the real phone's silent-confirm behaviour");
-                try {
-                    if (device != null) device.setPairingConfirmation(true);
-                } catch (SecurityException e) {
-                    LogBus.error("setPairingConfirmation failed", e);
-                }
-                abortBroadcast();
+                LogBus.log("pairing request (variant=" + variant
+                        + ") -- waiting for Android's confirmation UI");
             } else if (BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(action)) {
                 int state = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1);
                 LogBus.log("bond state -> " + describeBondState(state));

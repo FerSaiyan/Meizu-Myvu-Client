@@ -1,5 +1,6 @@
 package com.myvu.client.transport.ble;
 
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
@@ -12,6 +13,7 @@ import java.util.UUID;
  * per connection, so every one of these is dispatched by {@link GattQueue} and
  * completed by the matching BluetoothGattCallback.
  */
+@SuppressLint({"MissingPermission", "WrongConstant"})
 public abstract class GattOp {
 
     /** Executes the operation; returns false if the stack rejected it outright. */

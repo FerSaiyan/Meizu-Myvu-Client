@@ -1,5 +1,6 @@
 package com.myvu.client.transport.bt;
 
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.os.Handler;
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * protocol logic -- inbound frames are posted to the connection thread, so all
  * protocol state stays single-threaded and lock-free.
  */
+@SuppressLint("MissingPermission")
 public class RfcommTransport implements Transport {
 
     private final BluetoothDevice device;

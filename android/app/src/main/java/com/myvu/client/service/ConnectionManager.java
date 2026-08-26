@@ -1,9 +1,12 @@
 package com.myvu.client.service;
 
+import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 
@@ -223,6 +226,11 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
     }
 
     private void beginAutoSearch() {
+        if (!hasBluetoothPermission(Manifest.permission.BLUETOOTH_SCAN)
+                || !hasBluetoothPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+            failHard("Bluetooth scan and connect permissions are required");
+            return;
+        }
         BluetoothManager bm = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
         final BluetoothAdapter adapter = bm != null ? bm.getAdapter() : null;
         if (adapter == null) {
@@ -366,6 +374,10 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
     // ------------------------------------------------------------ connect
 
     private void beginConnect() {
+        if (!hasBluetoothPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+            failHard("Bluetooth connect permission is required");
+            return;
+        }
         BluetoothManager bm = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
         BluetoothAdapter adapter = bm != null ? bm.getAdapter() : null;
         if (adapter == null) {
@@ -378,7 +390,7 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
             return;
         }
 
-        ownMac = localIdentity(adapter);
+        ownMac = localIdentity();
         ownId = DeviceId.macToBytes(ownMac);
         sessionId = deriveSession(ownId);
         LogBus.log("target=" + targetMac + " ownId=" + Hex.encode(ownId)
@@ -404,12 +416,13 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
      * stand-in rather than our real MAC. Confirmed on hardware that the glasses
      * accept it -- they only use it to key the session.
      */
-    private String localIdentity(BluetoothAdapter adapter) {
-        String addr = adapter.getAddress();
-        if (addr == null || addr.isEmpty() || "02:00:00:00:00:00".equals(addr)) {
-            return "AA:BB:CC:DD:EE:FF";
-        }
-        return addr;
+    private String localIdentity() {
+        return "AA:BB:CC:DD:EE:FF";
+    }
+
+    private boolean hasBluetoothPermission(String permission) {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+                || context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
     }
 
     /** session = the last two bytes of our id, as a decimal string. */

@@ -6,11 +6,6 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
-    <!-- Requested so we may connect the HFP/A2DP profiles (what lights the
-         glasses' "phone connected" indicator). Not granted to a non-system app,
-         so AudioProfiles treats those calls as best-effort; declaring it matches
-         the official app and lets privileged/rooted builds actually force it. -->
-    <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
     <!-- Light haptic feedback on trackpad taps. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
