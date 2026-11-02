@@ -11,6 +11,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 
 import androidx.core.content.ContextCompat;
+import androidx.core.content.IntentCompat;
 
 import com.myvu.client.core.LogBus;
 import com.myvu.client.protocol.link.LinkCommands;
@@ -153,23 +154,39 @@ public class AudioProfiles {
 
     // ------------------------------------------------- connection-state events
 
+    /**
+     * Exported on purpose: the Bluetooth stack sends these as its own uid (1002), not as the
+     * system, and Android 14+ drops that at a not-exported receiver ("Exported Denial"). The
+     * filter holds only these two protected, system-sent actions, and the intent is still read
+     * defensively since any app can reach an exported receiver.
+     */
     private void registerReceiver() {
         IntentFilter filter = new IntentFilter();
         filter.addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED);
         filter.addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED);
         ContextCompat.registerReceiver(context, stateReceiver, filter,
-                ContextCompat.RECEIVER_NOT_EXPORTED);
+                ContextCompat.RECEIVER_EXPORTED);
         receiverRegistered = true;
     }
 
     private final BroadcastReceiver stateReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context c, Intent intent) {
-            BluetoothDevice d = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-            if (d == null || !d.getAddress().equalsIgnoreCase(targetMac)) return;
-            int st = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1);
+            String action = intent.getAction();
+            if (!BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED.equals(action)
+                    && !BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED.equals(action)) return;
+            BluetoothDevice d;
+            int st;
+            try {
+                d = IntentCompat.getParcelableExtra(intent, BluetoothDevice.EXTRA_DEVICE,
+                        BluetoothDevice.class);
+                st = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1);
+            } catch (RuntimeException malformed) {
+                return;
+            }
+            if (d == null || targetMac == null || !targetMac.equalsIgnoreCase(d.getAddress())) return;
             String which = BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED
-                    .equals(intent.getAction()) ? "A2DP" : "HFP";
+                    .equals(action) ? "A2DP" : "HFP";
             LogBus.trace(which + " state -> " + st);
             if (st == BluetoothProfile.STATE_CONNECTED
                     || st == BluetoothProfile.STATE_DISCONNECTED) {
