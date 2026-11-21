@@ -15,6 +15,8 @@ import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The version negotiation + ECDH bond on the BLE link/pairing characteristic.
@@ -117,11 +119,10 @@ public class BlePairing {
     }
 
     /** Feed every message from the internal characteristic here during pairing. */
-    public boolean onInternalMessage(byte[] payload) {
+    public boolean onInternalMessage(int pkgType, byte[] payload) {
         switch (step) {
             case AWAIT_VERSION:
-                handleVersionReply(payload);
-                return true;
+                return handleVersionReply(pkgType, payload);
             case AWAIT_KEY_REPLY:
                 handleKeyReply(payload);
                 return true;
@@ -130,16 +131,56 @@ public class BlePairing {
         }
     }
 
-    private void handleVersionReply(byte[] payload) {
+    private static final Pattern ENCRYPT_FIELD = Pattern.compile("\"e\"\\s*:\\s*(\\d+)");
+
+    /**
+     * The symmetric mode the glasses chose in their answer to our version
+     * negotiation ("e": 1=CBC, 2=CTR, else GCM), or -1 if the payload is not
+     * that answer.
+     *
+     * "e" is all we use from the answer, so a JSON object that does not parse
+     * still counts when "e" is readable in it. A 2.4.3 user report failed
+     * pairing on a 104-character JSONException, the length the captured answer
+     * produces when it is cut off after 41 bytes.
+     */
+    public static int negotiatedEncryptMode(byte[] payload) {
+        String text = new String(payload, StandardCharsets.UTF_8);
         try {
-            JSONObject peer = new JSONObject(new String(payload, StandardCharsets.UTF_8));
-            // The peer chooses the symmetric mode: 1=CBC, 2=CTR, else GCM.
-            encryptMode = peer.optInt("e", StarryCrypto.SYMMETRIC_V3_GCM);
-            LogBus.log("<- version reply " + peer + " (AES mode " + modeName(encryptMode) + ")");
-            exchangeKeys();
-        } catch (Exception e) {
-            failed("unparseable version reply: " + e);
+            return new JSONObject(text).optInt("e", StarryCrypto.SYMMETRIC_V3_GCM);
+        } catch (Exception notJson) {
+            Matcher m = ENCRYPT_FIELD.matcher(text);
+            return text.trim().startsWith("{") && m.find() ? Integer.parseInt(m.group(1)) : -1;
         }
+    }
+
+    private boolean handleVersionReply(int pkgType, byte[] payload) {
+        int mode = negotiatedEncryptMode(payload);
+        if (mode < 0) {
+            // The answer comes back as pkgType 17 (captured: SINGLE_NO_ACK 00 00 09 11).
+            // Anything else here, such as a LinkProtocol frame left from the glasses'
+            // previous session, is not it: let the caller route it and keep waiting.
+            if (pkgType != BlePackets.PKG_STARRY_DATA_INIT) {
+                LogBus.trace("passing on a pkgType " + pkgType + " frame while waiting for "
+                        + "the version answer (" + describe(payload) + ")");
+                return false;
+            }
+            // Worded so the support-report redactor keeps it: it reduces
+            // "reply: ..." to a length, as if it were user content.
+            failed("version answer is not JSON (pkgType " + pkgType + ", " + describe(payload) + ")");
+            return true;
+        }
+        encryptMode = mode;
+        LogBus.log("<- version answer " + new String(payload, StandardCharsets.UTF_8)
+                + " (pkgType " + pkgType + ", AES mode " + modeName(encryptMode) + ")");
+        exchangeKeys();
+        return true;
+    }
+
+    /** Length plus the first and last bytes: enough to tell a cut-off answer from another frame. */
+    private static String describe(byte[] payload) {
+        int n = Math.min(4, payload.length);
+        return payload.length + "B, head " + Hex.encode(payload, 0, n)
+                + ", tail " + Hex.encode(payload, payload.length - n, n);
     }
 
     // ------------------------------------------------------------- step 2

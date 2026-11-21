@@ -471,7 +471,7 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
     @Override
     public void onInternalMessage(int pkgType, byte[] payload) {
         // While the bond is running, the pairing state machine consumes these.
-        if (pairing != null && pairing.onInternalMessage(payload)) return;
+        if (pairing != null && pairing.onInternalMessage(pkgType, payload)) return;
 
         LinkMessage msg;
         try {
@@ -824,6 +824,14 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
 
     private void scheduleInitMessage(final List<InitBurst.Entry> entries, final int index,
                                      final RelaySession session, final Transport transport) {
+        if (!isCurrentSession(session, transport)) {
+            // The link this burst started on was torn down (and maybe replaced by
+            // a new connection) while the next message was pending. Failing here
+            // would tear down that new connection: a 2.4.3 report showed
+            // "BLE init burst did not complete" in CONNECTING after a restart.
+            LogBus.trace("init burst for a replaced link stopped at message " + index);
+            return;
+        }
         if (index >= entries.size()) {
             session.ready = true;
             LogBus.log("init burst complete -- "
@@ -1277,6 +1285,18 @@ public class ConnectionManager implements BleTransport.Listener, RelaySupervisor
         } else if (ble != null && ble.isReady()) {
             ble.external().send(payload, BlePackets.PKG_COMMON_DATA);
         }
+    }
+
+    /**
+     * True while [session] is still the live session of its link. Every BLE
+     * connect builds a fresh bleSession and every relay socket a fresh rfSession,
+     * and teardown drops the BLE transport, so a delayed continuation from a link
+     * that has since closed or been replaced gets false.
+     */
+    private boolean isCurrentSession(RelaySession session, Transport transport) {
+        return transport != null
+                ? transport == rfcomm && session == rfSession
+                : ble != null && session == bleSession;
     }
 
     private boolean isUsable(Transport transport) {
